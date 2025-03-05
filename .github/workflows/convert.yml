@@ -16,7 +16,11 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wkhtmltopdf nodejs npm
+          sudo apt-get install -y nodejs npm \
+          libnss3 libx11-xcb1 libxcomposite1 libxcursor1 \
+          libxdamage1 libxi6 libxtst6 libatk1.0-0 libpango-1.0-0 \
+          libcups2 libxrandr2 libasound2 libpangocairo-1.0-0 \
+          libgdk-pixbuf2.0-0 libgtk-3-0 libgbm-dev
           npm install html-docx-js puppeteer
       
       - name: Generate PDF with Puppeteer
@@ -25,7 +29,10 @@ jobs:
           node -e "
           const puppeteer = require('puppeteer');
           (async () => {
-              const browser = await puppeteer.launch();
+              const browser = await puppeteer.launch({
+                  headless: true,
+                  args: ['--no-sandbox', '--disable-setuid-sandbox']
+              });
               const page = await browser.newPage();
               await page.goto('file://$(pwd)/index.html', { waitUntil: 'networkidle2' });
               await page.pdf({ path: 'resume.pdf', format: 'A4' });
@@ -39,15 +46,26 @@ jobs:
           node -e "
           const fs = require('fs');
           const htmlDocx = require('html-docx-js');
-          const html = fs.readFileSync('index.html', 'utf-8');
-          const docx = htmlDocx.asBlob(html);
-          fs.writeFileSync('resume.docx', docx);
+          (async () => {
+              const html = fs.readFileSync('index.html', 'utf-8');
+              const docxBlob = htmlDocx.asBlob(html);
+              const buffer = Buffer.from(await docxBlob.arrayBuffer()); // Convert Blob to Buffer
+              fs.writeFileSync('resume.docx', buffer);
+          })();
           "
       
       - name: Upload Generated Files
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: resume-files
           path: |
             resume.pdf
             resume.docx
+      
+      - name: Upload Generated Files Locally (for act)
+        if: ${{ env.ACT }}
+        run: |
+          mkdir -p /workspace/html-to-pdf-and-docx/artifacts
+          mv resume.pdf /workspace/html-to-pdf-and-docx/artifacts/
+          mv resume.docx /workspace/html-to-pdf-and-docx/artifacts/
